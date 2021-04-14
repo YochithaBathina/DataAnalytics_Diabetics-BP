@@ -1,0 +1,192 @@
+---
+title: "Project"
+author: "Manideep"
+date: "12/04/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(dlookr)
+library(ggplot2)
+library(rworldmap)
+library(ggmap)
+library(tidyverse)
+library(car)
+```
+
+```{r}
+dataset <- read.csv("data1.csv", header = TRUE)
+dataset
+```
+
+````{r}
+summary(dataset)
+````
+
+
+```{r}
+str(dataset)
+```
+
+
+```{r}
+nrow(dataset[!complete.cases(dataset),])
+sum(is.na(dataset))
+colSums(is.na(dataset))
+```
+```{r}
+#remove rows with null values in 9 columns
+dataset <- dataset[!is.na(dataset$Region),]
+#impute missing diabetes value with 0
+dataset[is.na(dataset)] <- 0
+
+sum(is.na(dataset))
+summary(dataset$Prevalence_raised_blood_pressure)
+```
+```{r}
+dataset
+```
+
+```{r}
+#log transformation
+dataset$LogObesity <- log(dataset$Prevalence_obesity_adults+3)
+dataset$LogMorbidObesity <- log(dataset$Prevalence_morbid_obesity_adults+3)
+dataset$LogUnderwight <- log(dataset$Prevalence_underweight_adults+3)
+dataset$LogWesternDiet <- log(dataset$Western_diet_score+3)
+```
+
+```{r}
+#univariate analysis
+ggplot(dataset, aes(x = Mean_BMI_adults, fill = Sex)) +geom_histogram(position = "dodge")
+ggplot(dataset, aes(x = Prevalence_obesity_adults, color = "overweight")) +geom_density() + 
+  geom_density(aes(x = Prevalence_underweight_adults, color = "underweight"))+
+  scale_color_manual(name = "Weights", values = c("overweight" = "black","underweight" = "red"))
+```
+
+```{r fig.width==10, fig.height=8}
+library(corrplot)
+num_col <- dataset[, sapply(dataset, is.numeric)]
+values_cor<-cor(num_col)
+round(values_cor,2)
+corrplot(cor(num_col, use="pairwise.complete.obs"), method = "circle")
+```
+
+```{r}
+#multiple variables
+dataset %>% filter(Superregion != 0) %>%
+  ggplot(aes(x = Year, y = Diabetes_prevalence, color = Sex)) +geom_smooth() +facet_wrap(~Superregion)
+ggplot(dataset, aes(x = Year, y = Prevalence_obesity_adults, color = Sex)) +geom_smooth() +facet_wrap(~Superregion)
+```
+
+```{r}
+#multiple regression model for diabetes
+formula <- Diabetes_prevalence ~ Sex+Year + Mean_BMI_adults +LogObesity +LogWesternDiet+LogUnderwight+LogMorbidObesity +
+  Systolic_blood_pressure +  Prevalence_raised_blood_pressure  + Region + Superregion +                 
+  Years_of_education  + Urbanisation   + Country                         
+model <- lm(formula, data = dataset)
+#model Summary
+summary(model)
+```
+
+```{r}
+# Plot for model 1
+#plot(final_dataset_data.model1)
+par(mfrow=c(2,2))
+plot(model)
+par(mfrow=c(1,1))
+```
+```{r}
+#remove insignificant variables 
+
+final_formula <- Diabetes_prevalence  ~ Sex + Year + LogObesity + 
+  Prevalence_raised_blood_pressure  + Country
+
+model1 <- lm(final_formula, data = dataset)
+saveRDS(model1, file = "./model_1.rda")
+
+summary(model1)
+```
+```{r}
+new_val_dia=tibble(Sex=c('Female','Male') , Year=c(1981),
+                   LogObesity=c(0.6),Prevalence_raised_blood_pressure=c(0.13),Country=c('Bahamas'))
+diabetic_predict = predict.lm(model1, new_val_dia)
+diabetic_predict
+```
+```{r}
+# Calculating 95% of standardized residuals between -1.96 and 1.96 for outliers for model 2
+dataset$fitted <- model1$fitted
+dataset$residuals <- model1$residuals
+dataset$standardized.residuals <- rstandard(model1)
+possible.outliers_model_1 <- subset(dataset, standardized.residuals < -1.96 | standardized.residuals > 1.96)
+possible.outliers_model_1
+```
+```{r}
+plot(model1)
+```
+```{r}
+# Cooks distance for influential cases for model 2
+dataset$cooks <- cooks.distance(model1)
+plot(sort(dataset$cooks, decreasing=TRUE))
+```
+
+````{r}
+max(dataset$cooks)
+````
+```{r}
+#Annova tests
+res_aov_country <- aov(Diabetes_prevalence ~ Country, data = dataset )
+summary(res_aov_country)
+res_aov_region <- aov(Diabetes_prevalence ~ Region, data = dataset)
+```
+
+````{r}
+anova(model, model1)
+```
+```{r}
+###plot the residuals
+plot(dataset$Diabetes_prevalence, model1$residuals)
+abline(h=0,lty=2)
+hist(model1$residuals, main = "Histograms of residuals")
+```
+
+``````{r}
+#regression for blood pressure
+formula__bp <- Prevalence_raised_blood_pressure ~ Diabetes_prevalence + Sex + Year  +
+  Systolic_blood_pressure   + Country
+
+
+model_bp <- lm(formula_bp, data = dataset)
+summary(model_bp)
+````
+```{r}
+###plot the residuals
+plot(dataset$Prevalence_raised_blood_pressure, model_bp$residuals)
+abline(h=0,lty=2)
+hist(model_bp$residuals, main = "Histograms of residuals")
+```
+````{r}
+plot(model_bp)
+````
+```{r}
+# Calculating 95% of standardized residuals between -1.96 and 1.96 for outliers for model 2
+dataset$fitted <- model_bp$fitted
+dataset$residuals <- model_bp$residuals
+dataset$standardized.residuals <- rstandard(model_bp)
+possible.outliers_model_bp <- subset(dataset, standardized.residuals < -1.96 | standardized.residuals > 1.96)
+possible.outliers_model_bp
+```
+
+```{r}
+# Cooks distance for influential cases for model 2
+dataset$cooks <- cooks.distance(model_bp)
+plot(sort(dataset$cooks, decreasing=TRUE))
+```
+```{r}
+max(dataset$cooks)
+````
+
